@@ -1,0 +1,23 @@
+#don`t work now
+useMetrics: true
+checkUpdates: true
+
+reg:
+  main: "You need to register"
+  litl: "Use /r <password> <password>"
+  difrPass: "Use 1 password"
+  registred: "Enjoin game)"
+
+log:
+  main: "You need logget"
+  litl: "Use /l <password>"
+  wrP: "Wrong password"
+  logged: "Enjoin game)"
+
+cha:
+  onePass: "Don`t use old password"
+
+tooSimple: "Use the most harder password"
+
+#In seconds
+timeToLogin: 120

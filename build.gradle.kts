@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "net.Mirik9724"
-version = "0.1"
+version = "0.1.5"
 
 repositories {
     mavenCentral()
@@ -35,7 +35,7 @@ dependencies {
 
 tasks {
     runVelocity {
-        velocityVersion("3.5.0-SNAPSHOT")
+        velocityVersion("3.4.0-SNAPSHOT")
     }
 }
 
