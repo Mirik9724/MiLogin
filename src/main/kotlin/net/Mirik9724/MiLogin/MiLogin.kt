@@ -1,25 +1,15 @@
 package net.Mirik9724.MiLogin;
 
 import com.google.gson.JsonObject
-import com.google.gson.reflect.TypeToken
 import com.google.inject.Inject
-import com.mojang.brigadier.tree.CommandNode
-import com.mojang.brigadier.tree.LiteralCommandNode
-import com.mojang.brigadier.arguments.StringArgumentType
-import com.mojang.brigadier.builder.LiteralArgumentBuilder
-import com.mojang.brigadier.builder.RequiredArgumentBuilder
-import com.velocitypowered.api.command.CommandSource
-import com.velocitypowered.api.event.PostOrder
 import com.velocitypowered.api.event.Subscribe
-import com.velocitypowered.api.event.command.CommandExecuteEvent
-import com.velocitypowered.api.event.command.PlayerAvailableCommandsEvent
-import com.velocitypowered.api.event.connection.LoginEvent
-import com.velocitypowered.api.event.player.ServerConnectedEvent
+import com.velocitypowered.api.event.connection.DisconnectEvent
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.plugin.Dependency
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.proxy.Player
 import com.velocitypowered.api.proxy.ProxyServer
+import com.velocitypowered.api.scheduler.ScheduledTask
 import net.Mirik9724.api.copyFileFromJar
 import net.Mirik9724.api.loadYmlFile
 import net.elytrium.limboapi.api.LimboSessionHandler
@@ -33,12 +23,15 @@ import net.elytrium.limboapi.api.chunk.VirtualWorld
 import net.elytrium.limboapi.api.command.LimboCommandMeta
 import net.elytrium.limboapi.api.event.LoginLimboRegisterEvent
 import net.elytrium.limboapi.api.player.GameMode
+import net.kyori.adventure.bossbar.BossBar
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.title.Title
 import org.slf4j.Logger
 import java.io.File
 import java.time.Duration
+import java.time.LocalDateTime
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Consumer
 
 
 @Plugin(
@@ -56,13 +49,21 @@ import java.time.Duration
 )
 class MiLogin @Inject constructor(private val server: ProxyServer) {
     lateinit var log: Logger
-    lateinit var factory: LimboFactory
 
     companion object {
         internal lateinit var salt: ByteArray
         internal var data = mapOf<String, String>()
         lateinit var lFactory: Limbo
-        val notLoged = mutableListOf<String>()
+        lateinit var factory: LimboFactory
+        val notLoged = ConcurrentHashMap.newKeySet<String>()
+        val authTimers = ConcurrentHashMap<String, ScheduledTask>()
+        val bossBars = ConcurrentHashMap<String, BossBar>()
+        val loginAttempts = ConcurrentHashMap<String, Int>()
+
+        val commandCooldown = ConcurrentHashMap<String, Long>()
+        val cooldownTimeMs = 3000L
+
+        var maxAttempts: Int = 3
         val pth = "plugins/MiLogin/"
         val dtFile = File(pth+"data.json")
 
@@ -73,7 +74,16 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
         lateinit var cache: MutableMap<String, MiData>
         private val gson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
 
+        fun isOnCooldown(nick: String): Boolean {
+            val now = System.currentTimeMillis()
+            val last = commandCooldown.getOrDefault(nick, 0L)
 
+            return now - last < cooldownTimeMs
+        }
+
+        fun updateCooldown(nick: String) {
+            commandCooldown[nick] = System.currentTimeMillis()
+        }
 
         fun setupData() {
             if (!dtFile.exists()) {
@@ -182,6 +192,8 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
 
         setupData()
 
+        maxAttempts = data["limitOfErrors"]?.toIntOrNull() ?: 3
+
         log.info("Plugin ON")
     }
 
@@ -203,34 +215,115 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
                         when (cmd) {
                             "login", "l", "log" -> LogC().li(player, args)
                             "register", "reg", "r" -> RegC().li(player, args)
-//                            "change" -> ChaC().execute(player, args)
                         }
                     } else {
                     }
                 }
             }
 
-            lFactory.spawnPlayer(player, sessionHandler)
+            fun isSessionExpired(nick: String): Boolean {
+                val dataEntry = cache[nick] ?: return true
 
+                if (dataEntry.time.isEmpty()) return true
 
-            if(!isRegistered(player.username.toString())) {
-                player.showTitle(Title.title(
-                Component.text(data["reg.main"]!!),
-                Component.text(data["reg.litl"]!!),
-                Title.Times.times(
-                    Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
-                )
-                ))
+                val savedTime = LocalDateTime.parse(dataEntry.time)
+
+                val sessionMinutes = data["timeLiveSession"]!!.toLong()
+
+                val expireTime = savedTime.plusMinutes(sessionMinutes)
+
+                return LocalDateTime.now().isAfter(expireTime)
             }
-            else{
-                player.showTitle(Title.title(
-                    Component.text(data["log.main"]!!),
-                    Component.text(data["log.litl"]!!),
-                    Title.Times.times(
-                        Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
+
+            if(!isSessionExpired(player.username.toString())){
+                factory.passLoginLimbo(player);
+            }
+            else {
+                lFactory.spawnPlayer(player, sessionHandler)
+
+                val timeToLogin = data["timeToLogin"]!!.toLong()
+
+                val scheduler = server.scheduler
+                val startTime = System.currentTimeMillis()
+
+                val bossBar = BossBar.bossBar(
+                    Component.text(timeToLogin.toString() + "s"),
+                    1.0f,
+                    BossBar.Color.RED,
+                    BossBar.Overlay.PROGRESS
+                )
+
+                player.showBossBar(bossBar)
+
+                bossBars[player.username.toString()] = bossBar
+
+                val task = scheduler.buildTask(this, Consumer<ScheduledTask> { taskRef ->
+
+                    val elapsed = (System.currentTimeMillis() - startTime) / 1000
+                    val remaining = timeToLogin - elapsed
+
+                    if (remaining <= 0) {
+                        player.hideBossBar(bossBar)
+
+                        player.disconnect(Component.text(data["timeOut"]!!))
+
+                        bossBars.remove(player.username.toString())
+                        authTimers.remove(player.username.toString())
+
+                        taskRef.cancel()
+                        return@Consumer
+                    }
+
+                    val progress = remaining.toFloat() / timeToLogin.toFloat()
+
+                    bossBar.progress(progress)
+                    bossBar.name(Component.text(remaining.toString() + "s"))
+                })
+                    .repeat(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .schedule()
+
+                authTimers[player.username.toString()] = task
+
+                if (!isRegistered(player.username.toString())) {
+                    player.showTitle(
+                        Title.title(
+                            Component.text(data["reg.main"]!!),
+                            Component.text(data["reg.litl"]!!),
+                            Title.Times.times(
+                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
+                            )
+                        )
                     )
-                ))
+                } else {
+                    player.showTitle(
+                        Title.title(
+                            Component.text(data["log.main"]!!),
+                            Component.text(data["log.litl"]!!),
+                            Title.Times.times(
+                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
+                            )
+                        )
+                    )
+                }
             }
         }
+    }
+
+    @Subscribe
+    fun onDisconnect(event: DisconnectEvent) {
+        val player = event.player
+        val nick = player.username.toString()
+
+        MiLogin.authTimers[nick]?.cancel()
+        MiLogin.authTimers.remove(nick)
+
+        MiLogin.bossBars[nick]?.let {
+            player.hideBossBar(it)
+            MiLogin.bossBars.remove(nick)
+        }
+
+        MiLogin.loginAttempts.remove(nick)
+        MiLogin.commandCooldown.remove(nick)
+        MiLogin.notLoged.remove(nick)
     }
 }

@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "net.Mirik9724"
-version = "0.1.5"
+version = "0.2.0"
 
 repositories {
     mavenCentral()
@@ -28,6 +28,8 @@ repositories {
 dependencies {
     compileOnly("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
     kapt("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
+
+    implementation("com.nulab-inc:zxcvbn:1.9.0")
 
     compileOnly("com.github.Mirik9724:MirikAPI:v0.1.5.10")
     compileOnly("net.elytrium.limboapi:api:1.1.26")

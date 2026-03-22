@@ -21,3 +21,11 @@ tooSimple: "Use the most harder password"
 
 #In seconds
 timeToLogin: 120
+timeOut: "Time for auth out"
+
+#mins
+timeLiveSession: 30
+limitOfErrors: 3
+
+tooMoreTrys: "Don`t try pick up password"
+wait3Sec: "Pls wait 3 secconds"
