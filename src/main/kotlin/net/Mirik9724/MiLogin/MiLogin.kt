@@ -26,6 +26,7 @@ import net.elytrium.limboapi.api.player.GameMode
 import net.kyori.adventure.bossbar.BossBar
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.title.Title
+import net.kyori.adventure.title.TitlePart
 import org.slf4j.Logger
 import java.io.File
 import java.time.Duration
@@ -48,17 +49,21 @@ import java.util.function.Consumer
     ]
 )
 class MiLogin @Inject constructor(private val server: ProxyServer) {
-    lateinit var log: Logger
+
+    var wluInstaled = false
 
     companion object {
         internal lateinit var salt: ByteArray
         internal var data = mapOf<String, String>()
         lateinit var lFactory: Limbo
+        lateinit var log: Logger
         lateinit var factory: LimboFactory
         val notLoged = ConcurrentHashMap.newKeySet<String>()
         val authTimers = ConcurrentHashMap<String, ScheduledTask>()
         val bossBars = ConcurrentHashMap<String, BossBar>()
         val loginAttempts = ConcurrentHashMap<String, Int>()
+
+        lateinit var instance: MiLogin
 
         val commandCooldown = ConcurrentHashMap<String, Long>()
         val cooldownTimeMs = 3000L
@@ -108,6 +113,7 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
 
                 data.pass.takeIf { it.isNotEmpty() }?.let { playerJson.addProperty("pass", it) }
                 data.time.takeIf { it.isNotEmpty() }?.let { playerJson.addProperty("time", it) }
+                data.ip?.takeIf { it.isNotEmpty() }?.let { playerJson.addProperty("ip", it) }
 
                 root.add(nick, playerJson)
             }
@@ -189,7 +195,9 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
         server.commandManager.register(server.commandManager.metaBuilder("change").plugin(this).build(),
             ChaC())
 
+        wluInstaled = server.pluginManager.getPlugin("whitelist-ultra").isPresent
 
+        instance = this
         setupData()
 
         maxAttempts = data["limitOfErrors"]?.toIntOrNull() ?: 3
@@ -200,6 +208,12 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
     @Subscribe
     fun onLoginLimboRegister(event: LoginLimboRegisterEvent) {
         event.addOnJoinCallback {
+            if(wluInstaled == true){
+                if(net.Mirik9724.whitelist_ultra.Velocity.VelocityPlayerLoginListener.instance.check(event.player.username) == false){
+                    event.player.disconnect(net.Mirik9724.api.toMM(net.Mirik9724.whitelist_ultra.WLUCore.gT("kick")))
+                    return@addOnJoinCallback
+                }
+            }
             val player = event.player
             notLoged.add(event.player.username.toString())
 
@@ -213,18 +227,20 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
                         val args = parts.drop(1).toTypedArray()
 
                         when (cmd) {
-                            "login", "l", "log" -> LogC().li(player, args)
-                            "register", "reg", "r" -> RegC().li(player, args)
+                            "login", "l", "log" -> LogC(player.getRemoteAddress().getAddress().getHostAddress().toString()).li(player, args, server)
+                            "register", "reg", "r" -> RegC(player.getRemoteAddress().getAddress().getHostAddress().toString()).li(player, args)
                         }
-                    } else {
-                    }
+                    } else {}
                 }
             }
 
-            fun isSessionExpired(nick: String): Boolean {
+            fun isSessionExpired(nick: String, ip: String): Boolean {
                 val dataEntry = cache[nick] ?: return true
 
                 if (dataEntry.time.isEmpty()) return true
+                if(dataEntry.ip.isEmpty()) return true
+
+                if(dataEntry.ip == ip) return false
 
                 val savedTime = LocalDateTime.parse(dataEntry.time)
 
@@ -235,24 +251,23 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
                 return LocalDateTime.now().isAfter(expireTime)
             }
 
-            if(!isSessionExpired(player.username.toString())){
+            if(!isSessionExpired(player.username.toString(), player.getRemoteAddress().getAddress().getHostAddress().toString())) {
                 factory.passLoginLimbo(player);
             }
             else {
                 lFactory.spawnPlayer(player, sessionHandler)
 
-                val timeToLogin = data["timeToLogin"]!!.toLong()
+                val timeToLogin = data["timeToLogin"]?.toLong() ?: 120
 
                 val scheduler = server.scheduler
                 val startTime = System.currentTimeMillis()
 
                 val bossBar = BossBar.bossBar(
-                    Component.text(timeToLogin.toString() + "s"),
+                    Component.text(timeToLogin.toString() +"s"),
                     1.0f,
                     BossBar.Color.RED,
                     BossBar.Overlay.PROGRESS
                 )
-
                 player.showBossBar(bossBar)
 
                 bossBars[player.username.toString()] = bossBar
@@ -285,25 +300,30 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
                 authTimers[player.username.toString()] = task
 
                 if (!isRegistered(player.username.toString())) {
-                    player.showTitle(
-                        Title.title(
-                            Component.text(data["reg.main"]!!),
-                            Component.text(data["reg.litl"]!!),
-                            Title.Times.times(
-                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
-                            )
-                        )
-                    )
+//                    player.showTitle(
+//                        Title.title(
+//                            Component.text(data["reg.main"]!!),
+//                            Component.text(data["reg.litl"]!!),
+//                            Title.Times.times(
+//                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
+//                            )
+//                        )
+//                    )
+
+                    player.sendTitlePart(TitlePart.TITLE, Component.text(data["reg.main"]!!))
+                    player.sendTitlePart(TitlePart.SUBTITLE, Component.text(data["reg.litl"]!!))
                 } else {
-                    player.showTitle(
-                        Title.title(
-                            Component.text(data["log.main"]!!),
-                            Component.text(data["log.litl"]!!),
-                            Title.Times.times(
-                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
-                            )
-                        )
-                    )
+//                    player.showTitle(
+//                        Title.title(
+//                            Component.text(data["log.main"]!!),
+//                            Component.text(data["log.litl"]!!),
+//                            Title.Times.times(
+//                                Duration.ofMillis(500), Duration.ofHours(1000), Duration.ofMillis(500)
+//                            )
+//                        )
+//                    )
+                    player.sendTitlePart(TitlePart.TITLE, Component.text(data["log.main"]!!))
+                    player.sendTitlePart(TitlePart.SUBTITLE, Component.text(data["log.litl"]!!))
                 }
             }
         }

@@ -2,18 +2,31 @@ package net.Mirik9724.MiLogin
 
 import com.velocitypowered.api.command.SimpleCommand
 import com.velocitypowered.api.proxy.Player
+import com.velocitypowered.api.proxy.ProxyServer
 import net.Mirik9724.MiLogin.MiLogin.Companion.authTimers
 import net.Mirik9724.MiLogin.MiLogin.Companion.cache
 import net.Mirik9724.MiLogin.MiLogin.Companion.data
 import net.Mirik9724.MiLogin.MiLogin.Companion.isRegistered
+import net.Mirik9724.MiLogin.MiLogin.Companion.log
 import net.Mirik9724.MiLogin.MiLogin.Companion.notLoged
 import net.Mirik9724.MiLogin.PasswordGuard.isSimple
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import java.time.LocalDateTime
 
-class LogC() {
-    fun li(player: Player, args: Array<String>) {
+fun cleanup(player: Player) {
+    val name = player.username
+    notLoged.remove(name)
+    authTimers[name]?.cancel()
+    authTimers.remove(name)
+    MiLogin.bossBars[name]?.let {
+        player.hideBossBar(it)
+        MiLogin.bossBars.remove(name)
+    }
+}
+
+class LogC(val ipc: String) {
+    fun li(player: Player, args: Array<String>, server: ProxyServer) {
         if (MiLogin.isOnCooldown(player.username.toString())) {
             player.sendMessage(Component.text(data["wait3Sec"]!!).color(NamedTextColor.RED))
             return
@@ -43,24 +56,20 @@ class LogC() {
         player.resetTitle()
 
         MiLogin.loginAttempts.remove(player.username.toString())
-
         cache[player.username.toString()]  = MiData(
-            time = LocalDateTime.now().toString()
+            time = LocalDateTime.now().toString(),
+            ip = ipc
         )
+
         MiLogin.saveData()
-        notLoged.remove(player.username.toString())
-        authTimers[player.username.toString()]?.cancel()
-        authTimers.remove(player.username.toString())
-        MiLogin.bossBars[player.username.toString()]?.let {
-            player.hideBossBar(it)
-            MiLogin.bossBars.remove(player.username.toString())
-        }
+        cleanup(player)
 
         MiLogin.factory.passLoginLimbo(player);
+        log.info("player ${player.username.toString()} was logged")
     }
 }
 
-class RegC() {
+class RegC(val ipc: String) {
     fun li(player: Player, args: Array<String>) {
         if(isRegistered(player.username.toString())){return}
         if (MiLogin.isOnCooldown(player.username.toString())) {
@@ -87,19 +96,14 @@ class RegC() {
 
         cache[player.username.toString()]  = MiData(
             pass = Hash(args[0]),
-            time = LocalDateTime.now().toString()
+            time = LocalDateTime.now().toString(),
+            ip = ipc
         )
         MiLogin.saveData()
-
-        notLoged.remove(player.username.toString())
-        authTimers[player.username.toString()]?.cancel()
-        authTimers.remove(player.username.toString())
-        MiLogin.bossBars[player.username.toString()]?.let {
-            player.hideBossBar(it)
-            MiLogin.bossBars.remove(player.username.toString())
-        }
+        cleanup(player)
 
         MiLogin.factory.passLoginLimbo(player);
+        log.info("player ${player.username.toString()} was registered")
     }
 }
 
@@ -123,8 +127,7 @@ class ChaC : SimpleCommand {
         }
 
         cache[source.username.toString()]  = MiData(
-            pass = Hash(args[1]),
-            time = LocalDateTime.now().toString()
+            pass = Hash(args[1])
         )
         MiLogin.saveData()
     }

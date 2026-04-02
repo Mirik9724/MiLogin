@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "net.Mirik9724"
-version = "0.2.0"
+version = "0.2.3"
 
 repositories {
     mavenCentral()
@@ -33,6 +33,7 @@ dependencies {
 
     compileOnly("com.github.Mirik9724:MirikAPI:v0.1.5.10")
     compileOnly("net.elytrium.limboapi:api:1.1.26")
+    compileOnly(files("libs/WLU.jar"))
 }
 
 tasks {
