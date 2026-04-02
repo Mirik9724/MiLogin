@@ -238,14 +238,14 @@ class MiLogin @Inject constructor(private val server: ProxyServer) {
                 val dataEntry = cache[nick] ?: return true
 
                 if (dataEntry.time.isEmpty()) return true
-                if(dataEntry.ip.isEmpty()) return true
 
-                if(dataEntry.ip == ip) return false
+                if (dataEntry.ip.isEmpty() || dataEntry.ip != ip) {
+                    return true
+                }
 
                 val savedTime = LocalDateTime.parse(dataEntry.time)
 
                 val sessionMinutes = data["timeLiveSession"]!!.toLong()
-
                 val expireTime = savedTime.plusMinutes(sessionMinutes)
 
                 return LocalDateTime.now().isAfter(expireTime)
