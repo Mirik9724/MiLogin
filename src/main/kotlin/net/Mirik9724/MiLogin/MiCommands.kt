@@ -58,6 +58,7 @@ class LogC(val ipc: String) {
         MiLogin.loginAttempts.remove(player.username.toString())
         cache[player.username.toString()]  = MiData(
             time = LocalDateTime.now().toString(),
+            pass = cache[player.username.toString()]?.pass.toString(),
             ip = ipc
         )
 
@@ -107,7 +108,7 @@ class RegC(val ipc: String) {
     }
 }
 
-class ChaC : SimpleCommand {
+class ChaC() : SimpleCommand {
     override fun execute(invocation: SimpleCommand.Invocation) {
         val source = invocation.source()
         val args = invocation.arguments()
@@ -127,7 +128,9 @@ class ChaC : SimpleCommand {
         }
 
         cache[source.username.toString()]  = MiData(
-            pass = Hash(args[1])
+            pass = Hash(args[1]),
+            time = LocalDateTime.now().toString(),
+            ip = source.getRemoteAddress().getAddress().getHostAddress().toString()
         )
         MiLogin.saveData()
     }
